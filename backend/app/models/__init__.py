@@ -1,0 +1,51 @@
+﻿from backend.app.models.domain import (
+    CandidateModel,
+    ModelCapabilities,
+    ModelDefinition,
+    ModelTier,
+    QualityResult,
+    RejectedModel,
+    RequestIntent,
+    RequestProfile,
+    RequestTrace,
+    RoutingDecision,
+    TaskType,
+)
+from backend.app.models.chat import (
+    ChatCompletionRequest,
+    ChatMessage,
+    InternalChatCompletion,
+    InternalChatChoice,
+    OpenAIChatCompletionResponse,
+    TokenUsage,
+)
+from backend.app.models.benchmark import (
+    BenchmarkRunRequest,
+    BenchmarkRunResult,
+    BenchmarkStrategy,
+    BenchmarkStrategyMetrics,
+)
+
+__all__ = [
+    "CandidateModel",
+    "ModelCapabilities",
+    "ModelDefinition",
+    "ModelTier",
+    "QualityResult",
+    "RejectedModel",
+    "RequestIntent",
+    "RequestProfile",
+    "RequestTrace",
+    "RoutingDecision",
+    "TaskType",
+    "ChatCompletionRequest",
+    "ChatMessage",
+    "InternalChatCompletion",
+    "InternalChatChoice",
+    "OpenAIChatCompletionResponse",
+    "TokenUsage",
+    "BenchmarkRunRequest",
+    "BenchmarkRunResult",
+    "BenchmarkStrategy",
+    "BenchmarkStrategyMetrics",
+]

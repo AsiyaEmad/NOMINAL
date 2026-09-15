@@ -1,0 +1,67 @@
+models:
+  - id: local-llama-3.1-8b
+    tier: local
+    provider: ollama
+    model_name: llama3.1:8b
+    input_cost_per_million_tokens: 0.0
+    output_cost_per_million_tokens: 0.0
+    expected_latency_ms: 500
+    reasoning_score: 0.45
+    coding_score: 0.48
+    general_score: 0.60
+    context_window: 128000
+    enabled: true
+    capabilities:
+      supports_tools: false
+      supports_vision: false
+
+  - id: economy-gpt-4.1-mini
+    tier: economy
+    provider: openai
+    model_name: gpt-4.1-mini
+    input_cost_per_million_tokens: 0.40
+    output_cost_per_million_tokens: 1.60
+    expected_latency_ms: 750
+    reasoning_score: 0.68
+    coding_score: 0.72
+    general_score: 0.78
+    context_window: 1047576
+    enabled: true
+    capabilities:
+      supports_tools: true
+      supports_vision: true
+      supports_json_mode: true
+
+  - id: balanced-gpt-4.1
+    tier: balanced
+    provider: openai
+    model_name: gpt-4.1
+    input_cost_per_million_tokens: 2.00
+    output_cost_per_million_tokens: 8.00
+    expected_latency_ms: 1200
+    reasoning_score: 0.84
+    coding_score: 0.87
+    general_score: 0.90
+    context_window: 1047576
+    enabled: true
+    capabilities:
+      supports_tools: true
+      supports_vision: true
+      supports_json_mode: true
+
+  - id: frontier-o3
+    tier: frontier
+    provider: openai
+    model_name: o3
+    input_cost_per_million_tokens: 2.00
+    output_cost_per_million_tokens: 8.00
+    expected_latency_ms: 3500
+    reasoning_score: 0.96
+    coding_score: 0.94
+    general_score: 0.93
+    context_window: 200000
+    enabled: true
+    capabilities:
+      supports_tools: true
+      supports_vision: true
+      supports_json_mode: true

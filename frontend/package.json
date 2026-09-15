@@ -1,0 +1,34 @@
+{
+  "name": "nominal-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint . --max-warnings=0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "recharts": "^2.15.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/node": "^22.13.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.20.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "globals": "^15.15.0",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.7.3",
+    "typescript-eslint": "^8.24.0"
+  }
+}
