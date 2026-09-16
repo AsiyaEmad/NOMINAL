@@ -39,5 +39,6 @@ export const nominalApi = {
   getTraces: (limit = 100, offset = 0) => get<RequestTrace[]>(`/api/traces?limit=${limit}&offset=${offset}`),
   getTrace: (requestId: string) => get<RequestTrace>(`/api/traces/${encodeURIComponent(requestId)}`),
   getBenchmarks: () => get<BenchmarkRun[]>('/api/benchmarks'),
+  getBenchmark: (runId: string) => get<BenchmarkRun>(`/api/benchmarks/${encodeURIComponent(runId)}`),
   runBenchmark: () => post<BenchmarkRun>('/api/benchmarks/run', {}),
 }

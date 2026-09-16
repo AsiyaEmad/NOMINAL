@@ -88,9 +88,15 @@ class HeuristicRequestProfiler(RequestProfiler):
             RequestIntent.ANALYSIS,
             RequestIntent.CREATIVE,
         ):
-            if any(keyword in text for keyword in self._KEYWORDS[intent]):
+            if any(self._matches_keyword(text, keyword) for keyword in self._KEYWORDS[intent]):
                 return intent
         return RequestIntent.SIMPLE_QA if "?" in text or text.strip() else RequestIntent.UNKNOWN
+
+    @staticmethod
+    def _matches_keyword(text: str, keyword: str) -> bool:
+        """Match complete words or phrases, never an arbitrary character substring."""
+        phrase = re.escape(keyword).replace(r"\ ", r"\s+")
+        return bool(re.search(rf"(?<!\w){phrase}(?!\w)", text))
 
     @staticmethod
     def _conversation_text(messages: Iterable[ChatMessage]) -> str:

@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     baseline_model: str = "frontier-o3"
     benchmark_frontier_model: str = "frontier-o3"
     benchmark_economy_model: str = "economy-gpt-4.1-mini"
+    benchmark_judge_enabled: bool = False
+    benchmark_judge_model: str = "economy-gpt-4.1-mini"
+    benchmark_judge_max_tokens: int = Field(default=800, ge=128, le=2_000)
     profiler_llm_enabled: bool = False
     quality_judge_enabled: bool = False
     max_quality_escalations: int = Field(default=1, ge=0, le=3)

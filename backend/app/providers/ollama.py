@@ -64,19 +64,27 @@ class OllamaProvider(ModelProvider):
                     f"{self._config.base_url.rstrip('/')}/api/chat", json=payload
                 )
         except httpx.TimeoutException as exc:
-            raise ProviderTimeoutError("Ollama timed out") from exc
+            raise ProviderTimeoutError("Ollama timed out", failure_category="timeout") from exc
         except httpx.RequestError as exc:
-            raise ProviderUnavailableError("Ollama is unavailable") from exc
+            raise ProviderUnavailableError("Ollama is unavailable", failure_category="transport") from exc
 
         latency_ms = int((time.perf_counter() - started) * 1000)
         if response.status_code in (401, 403):
-            raise ProviderAuthenticationError("Ollama rejected credentials")
+            raise ProviderAuthenticationError(
+                "Ollama rejected credentials", upstream_status=response.status_code, failure_category="authentication"
+            )
         if response.status_code == 429:
-            raise ProviderRateLimitError("Ollama rate limit exceeded")
+            raise ProviderRateLimitError("Ollama rate limit exceeded", upstream_status=429, failure_category="rate_limit")
         if response.status_code >= 500:
-            raise ProviderUnavailableError("Ollama is unavailable")
+            raise ProviderUnavailableError(
+                "Ollama is unavailable", upstream_status=response.status_code, failure_category="http_5xx"
+            )
         if response.is_error:
-            raise ProviderError(f"Ollama returned HTTP {response.status_code}")
+            raise ProviderError(
+                f"Ollama returned HTTP {response.status_code}",
+                upstream_status=response.status_code,
+                failure_category="deterministic_http",
+            )
         try:
             raw_response: dict[str, Any] = response.json()
             return InternalChatCompletion(
@@ -94,7 +102,9 @@ class OllamaProvider(ModelProvider):
                 provider_latency_ms=latency_ms,
             )
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
-            raise MalformedProviderResponseError("Ollama returned an invalid completion") from exc
+            raise MalformedProviderResponseError(
+                "Ollama returned an invalid completion", failure_category="validation"
+            ) from exc
 
     async def health_check(self) -> bool:
         try:

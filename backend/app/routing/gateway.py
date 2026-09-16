@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
 import time
+from typing import Any
 from uuid import uuid4
 
 from backend.app.core.config import Settings
@@ -7,6 +9,7 @@ from backend.app.models import (
     ChatCompletionRequest,
     InternalChatCompletion,
     ModelDefinition,
+    ProviderAttempt,
     QualityResult,
     RequestTrace,
     RoutingDecision,
@@ -26,6 +29,9 @@ from backend.app.telemetry.base import TelemetryRepository
 from backend.app.telemetry.costs import CostCalculator
 
 _RETRYABLE_PROVIDER_ERRORS = (ProviderTimeoutError, ProviderRateLimitError, ProviderUnavailableError)
+ProviderOperationExecutor = Callable[
+    [Any, ModelDefinition, ChatCompletionRequest, Any], Awaitable[InternalChatCompletion]
+]
 
 
 class ChatCompletionGateway:
@@ -41,6 +47,7 @@ class ChatCompletionGateway:
         routing_engine: RoutingEngine,
         quality_evaluator: QualityEvaluator,
         cost_calculator: CostCalculator | None = None,
+        provider_operation_executor: ProviderOperationExecutor | None = None,
     ) -> None:
         self._catalog = catalog
         self._providers = providers
@@ -50,9 +57,12 @@ class ChatCompletionGateway:
         self._routing_engine = routing_engine
         self._quality_evaluator = quality_evaluator
         self._cost_calculator = cost_calculator
+        # This hook is only supplied by BenchmarkRunner's dedicated gateway.
+        # The production gateway continues to call providers directly.
+        self._provider_operation_executor = provider_operation_executor
 
     async def complete(
-        self, request: ChatCompletionRequest
+        self, request: ChatCompletionRequest, *, operation_context: Any | None = None
     ) -> tuple[str, InternalChatCompletion, RoutingDecision]:
         request_id = str(uuid4())
         started = time.perf_counter()
@@ -76,6 +86,7 @@ class ChatCompletionGateway:
                         current_model,
                         decision,
                         failed_infrastructure_models,
+                        operation_context,
                     )
                 )
                 fallback_count += attempt_fallbacks
@@ -136,6 +147,7 @@ class ChatCompletionGateway:
 
         accounting = self._cost_calculator.account_for(executions) if self._cost_calculator else None
         provider_latency_ms = sum(item.provider_latency_ms for _, item in executions)
+        provider_attempts = self._provider_attempts(executions)
         trace = RequestTrace(
             request_id=request_id,
             profile=profile,
@@ -147,8 +159,9 @@ class ChatCompletionGateway:
             total_latency_ms=int((time.perf_counter() - started) * 1000),
             provider=current_model.provider,
             model_used=completion.model,
-            input_tokens=completion.usage.input_tokens,
-            output_tokens=completion.usage.output_tokens,
+            input_tokens=sum(attempt.input_tokens for attempt in provider_attempts),
+            output_tokens=sum(attempt.output_tokens for attempt in provider_attempts),
+            provider_attempts=provider_attempts,
             initial_model=initial_model.id,
             final_model=current_model.id,
             escalated=escalation_count > 0,
@@ -173,6 +186,7 @@ class ChatCompletionGateway:
         selected_model: ModelDefinition,
         decision: RoutingDecision,
         failed_models: set[str],
+        operation_context: Any | None = None,
     ) -> tuple[ModelDefinition, InternalChatCompletion, int, list[str]]:
         ordered_models = [selected_model] + [
             self._catalog_model(candidate.model_id)
@@ -187,7 +201,11 @@ class ChatCompletionGateway:
                 continue
             try:
                 provider = self._providers.get(model.provider)
-                completion = await provider.chat_completion(model, request)
+                completion = (
+                    await self._provider_operation_executor(provider, model, request, operation_context)
+                    if self._provider_operation_executor is not None and operation_context is not None
+                    else await provider.chat_completion(model, request)
+                )
                 return model, completion, fallback_count, reasons
             except _RETRYABLE_PROVIDER_ERRORS as exc:
                 failed_models.add(model.id)
@@ -224,6 +242,22 @@ class ChatCompletionGateway:
     def _catalog_model(self, model_id: str) -> ModelDefinition:
         return next(model for model in self._catalog.enabled_models if model.id == model_id)
 
+    @staticmethod
+    def _provider_attempts(
+        executions: list[tuple[ModelDefinition, InternalChatCompletion]],
+    ) -> list[ProviderAttempt]:
+        return [
+            ProviderAttempt(
+                model_id=model.id,
+                provider=model.provider,
+                model_name=completion.model,
+                input_tokens=completion.usage.input_tokens,
+                output_tokens=completion.usage.output_tokens,
+                latency_ms=completion.provider_latency_ms,
+            )
+            for model, completion in executions
+        ]
+
     async def _record_failure(
         self,
         *,
@@ -240,6 +274,7 @@ class ChatCompletionGateway:
         total_latency_ms: int,
     ) -> None:
         accounting = self._cost_calculator.account_for(executions) if self._cost_calculator else None
+        provider_attempts = self._provider_attempts(executions)
         await self._telemetry.record(
             RequestTrace(
                 request_id=request_id,
@@ -256,6 +291,10 @@ class ChatCompletionGateway:
                 fallback_used=fallback_count > 0,
                 fallback_reason="; ".join(fallback_reasons) or None,
                 total_latency_ms=total_latency_ms,
+                provider_latency_ms=sum(attempt.latency_ms for attempt in provider_attempts),
+                input_tokens=sum(attempt.input_tokens for attempt in provider_attempts),
+                output_tokens=sum(attempt.output_tokens for attempt in provider_attempts),
+                provider_attempts=provider_attempts,
                 actual_cost=accounting.actual_cost if accounting else None,
                 estimated_baseline_cost=accounting.estimated_baseline_cost if accounting else None,
                 estimated_cost_saved=accounting.estimated_cost_saved if accounting else None,

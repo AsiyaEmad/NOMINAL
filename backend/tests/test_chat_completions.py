@@ -1,11 +1,18 @@
 ﻿import json
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import ProviderConfig
 from backend.app.main import create_app
+from backend.app.models import ChatCompletionRequest, ModelDefinition, ModelTier
 from backend.app.providers import OpenAICompatibleProvider, ProviderRegistry
+from backend.app.providers.errors import (
+    ProviderAuthenticationError,
+    ProviderRateLimitError,
+    ProviderUnavailableError,
+)
 
 
 def test_chat_completion_proxies_messages_and_normalizes_response() -> None:
@@ -110,3 +117,87 @@ def test_malformed_chat_request_returns_openai_style_validation_error() -> None:
             "code": "validation_error",
         }
     }
+
+
+async def test_o3_uses_max_completion_tokens_for_openai_compatibility() -> None:
+    received_request: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received_request.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "Done."},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        "openai",
+        ProviderConfig(base_url="https://api.openai.com/v1"),
+        transport=httpx.MockTransport(handler),
+    )
+    model = ModelDefinition(
+        id="frontier-o3",
+        tier=ModelTier.FRONTIER,
+        provider="openai",
+        model_name="o3",
+        input_cost_per_million_tokens=2,
+        output_cost_per_million_tokens=8,
+        expected_latency_ms=3500,
+        reasoning_score=0.96,
+        coding_score=0.94,
+        general_score=0.93,
+        context_window=200000,
+    )
+
+    await provider.chat_completion(
+        model,
+        ChatCompletionRequest(
+            model="frontier-o3",
+            messages=[{"role": "user", "content": "Solve this."}],
+            max_tokens=512,
+        ),
+    )
+
+    assert received_request["model"] == "o3"
+    assert received_request["max_completion_tokens"] == 512
+    assert "max_tokens" not in received_request
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "error_type", "category"),
+    [
+        (401, ProviderAuthenticationError, "authentication"),
+        (429, ProviderRateLimitError, "rate_limit"),
+        (503, ProviderUnavailableError, "http_5xx"),
+    ],
+)
+async def test_provider_errors_preserve_safe_status_and_category(
+    status: int, error_type: type[Exception], category: str
+) -> None:
+    provider = OpenAICompatibleProvider(
+        "openai",
+        ProviderConfig(base_url="https://provider.example/v1"),
+        transport=httpx.MockTransport(lambda request: httpx.Response(status, text="upstream body is ignored")),
+    )
+    model = ModelDefinition(
+        id="economy", tier=ModelTier.ECONOMY, provider="openai", model_name="gpt-4.1-mini",
+        input_cost_per_million_tokens=0.4, output_cost_per_million_tokens=1.6,
+        expected_latency_ms=100, reasoning_score=0.8, coding_score=0.8, general_score=0.8,
+        context_window=100_000,
+    )
+    request = ChatCompletionRequest(model="economy", messages=[{"role": "user", "content": "Hello"}])
+
+    with pytest.raises(error_type) as raised:
+        await provider.chat_completion(model, request)
+
+    assert raised.value.upstream_status == status
+    assert raised.value.failure_category == category
+    assert "upstream body" not in str(raised.value)

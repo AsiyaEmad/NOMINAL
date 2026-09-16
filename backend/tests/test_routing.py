@@ -2,7 +2,8 @@
 
 import pytest
 
-from backend.app.models import ChatCompletionRequest, ChatMessage
+from backend.app.models import ChatCompletionRequest, ChatMessage, InternalChatChoice, InternalChatCompletion
+from backend.app.quality import LayeredQualityEvaluator
 from backend.app.routing import CostAwareRoutingEngine, HeuristicRequestProfiler, ModelCatalog
 
 
@@ -26,10 +27,54 @@ async def test_profiler_recognizes_capability_dimensions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_profiler_matches_coding_keywords_as_lexical_terms() -> None:
+    profiler = HeuristicRequestProfiler()
+
+    capital = await profiler.profile(ChatCompletionRequest(
+        model="nominal-auto", messages=[ChatMessage(role="user", content="What is the capital of France?")]
+    ))
+    api = await profiler.profile(ChatCompletionRequest(
+        model="nominal-auto", messages=[ChatMessage(role="user", content="Create an API endpoint using FastAPI.")]
+    ))
+    classification = await profiler.profile(ChatCompletionRequest(
+        model="nominal-auto", messages=[ChatMessage(role="user", content="Classify this support ticket.")]
+    ))
+    python = await profiler.profile(ChatCompletionRequest(
+        model="nominal-auto", messages=[ChatMessage(role="user", content="Write a Python function to sort values.")]
+    ))
+
+    assert capital.intent.value == "simple_qa"
+    assert capital.coding_requirement == 0
+    assert api.intent.value == "coding"
+    assert api.coding_requirement > 0
+    assert classification.intent.value == "classification"
+    assert classification.coding_requirement == 0
+    assert python.intent.value == "coding"
+
+
+@pytest.mark.asyncio
+async def test_simple_qa_profile_uses_general_quality_checks(catalog: ModelCatalog) -> None:
+    profiler = HeuristicRequestProfiler()
+    profile = await profiler.profile(ChatCompletionRequest(
+        model="nominal-auto", messages=[ChatMessage(role="user", content="What is the capital of Japan?")]
+    ))
+    response = InternalChatCompletion(
+        model="test", provider_latency_ms=1,
+        choices=[InternalChatChoice(message=ChatMessage(role="assistant", content="Tokyo is the capital of Japan."))],
+    )
+    decision = await CostAwareRoutingEngine().route(profile, catalog.enabled_models)
+    quality = await LayeredQualityEvaluator().evaluate(profile, decision, response)
+
+    assert profile.intent.value == "simple_qa"
+    assert quality.score == 0.95
+    assert quality.reasons == ["deterministic checks passed"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("prompt", "expected_model"),
     [
-        ("What is the capital of France?", "balanced-gpt-4.1"),
+        ("What is the capital of France?", "frontier-o3"),
         ("Translate 'good morning' into French.", "economy-gpt-4.1-mini"),
         ("Extract all company names and dates from this paragraph.", "economy-gpt-4.1-mini"),
         ("Summarize this long document in detail.", "economy-gpt-4.1-mini"),

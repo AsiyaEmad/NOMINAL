@@ -5,9 +5,20 @@ class ProviderError(Exception):
     error_type = "provider_error"
     code = "provider_error"
 
-    def __init__(self, message: str, *, request_id: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        request_id: str | None = None,
+        upstream_status: int | None = None,
+        failure_category: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.request_id = request_id
+        # Deliberately sanitized metadata for retry decisions and benchmark
+        # observability. Provider response bodies and credentials are never kept.
+        self.upstream_status = upstream_status
+        self.failure_category = failure_category
 
 
 class ProviderTimeoutError(ProviderError):

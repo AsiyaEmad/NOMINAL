@@ -128,13 +128,35 @@ Each corpus item is run through three strategies using real configured-provider 
 | always_economy | Direct call to the configured economy model. |
 | nominal | Full NOMINAL routing, quality, escalation, and fallback pipeline. |
 
-Runs persist total/estimated cost per request, tokens, average/P50/P95 latency, quality score/pass rate, frontier calls, escalations, and failures. All strategies use the same evaluator instance. Without a configured judge, results are labeled **heuristic quality evaluation**.
+Runs persist configured-price inference cost, returned inference tokens, average/P50/P95 inference latency, benchmark quality score/pass rate, frontier calls, escalations, failures, and separate judge cost/latency. The production quality gate is not the benchmark evaluator.
 
-### Persisted benchmark artifact
+### Canonical publication benchmark
 
-One persisted run exists locally: nominal-core-v1, captured on 2026-09-15 with heuristic evaluation. It is **not a valid value comparison**: all 40 requests failed for every strategy, so returned-token, cost, and quality measurements are zero. NOMINAL also recorded 40 failures. This artifact is retained for transparency only; this README intentionally reports **no savings percentage** from it.
+The audited publication artifact is canonical run `ea187efb-9229-4ddd-949f-107c9bc7fc61`, recorded on **2026-09-16 05:16:20 UTC**. It evaluated the same frozen 40-item corpus for all three strategies using real provider calls:
 
-Run the benchmark against configured providers before presenting any cost or quality claim.
+- **Always Frontier**: direct configured frontier model.
+- **Always Economy**: direct configured economy model.
+- **NOMINAL**: capability-aware routing with the production quality gate, bounded escalation, and production fallback.
+
+The benchmark used a strategy-blind configured judge: the judge received the prompt, category, evaluation criteria, and response, but not strategy, model, cost, or latency. A symmetric transient retry policy allowed at most **3 total attempts per operation**. Judge cost and judge latency are deliberately excluded from inference-cost and inference-latency comparisons.
+
+| Metric | Always Frontier | Always Economy | NOMINAL |
+| --- | ---: | ---: | ---: |
+| Logical requests | 40 | 40 | 40 |
+| Configured-price inference cost | $0.0715560 | $0.0095096 | $0.0564296 |
+| Inference cost / request | $0.0018 | $0.0002 | $0.0014 |
+| Average benchmark quality | 0.900 | 0.961 | 0.907 |
+| Benchmark quality pass rate | 95.0% | 100.0% | 92.5% |
+| Average inference latency | 2,260.72 ms | 2,124.05 ms | 2,237.10 ms |
+| P95 inference latency | 4,444 ms | 5,424 ms | 5,122 ms |
+| Frontier provider calls | 40 | 0 | 15 |
+| Quality escalations | 0 | 0 | 1 |
+| Production fallbacks | 0 | 0 | 0 |
+| Provider/evaluation failures | 0 / 0 | 0 / 0 | 0 / 0 |
+
+On this frozen corpus, NOMINAL used **21.14% lower configured-price inference cost** than Always Frontier ($0.0564296 versus $0.0715560). Its average benchmark quality score was **+0.007** higher (0.907 versus 0.900), while its quality pass rate was **2.5 percentage points lower** (92.5% versus 95.0%).
+
+NOMINAL's average inference latency was **23.62 ms lower** than Frontier (1.04% faster), but its P95 inference latency was **678 ms higher** (15.26% slower). It completed **25 of 40 logical requests without using Frontier** (62.5% avoidance), with one quality escalation (2.5%) and no production fallbacks. These are controlled benchmark observations, not a claim about every workload or provider bill.
 
 ## 11. Dashboard
 
@@ -144,7 +166,9 @@ The React dashboard is a dark control-plane view built for a fast judge read:
 - routing distribution, baseline-vs-NOMINAL cost, latency, and cumulative-savings charts
 - auto-refreshing live request table
 - request-level trace with candidates, rejections, quality gate, escalation, and final path
-- benchmark comparison table and charts for Frontier, Economy, and NOMINAL
+- a separately labeled **canonical publication benchmark** table and charts for Frontier, Economy, and NOMINAL, pinned to audited run `ea187efb-9229-4ddd-949f-107c9bc7fc61`
+
+The top overview and live-request panels intentionally use accumulated operational telemetry. They may show different values from the controlled benchmark section.
 
 When the backend is unavailable, the dashboard shows a clear reconnect message rather than an unhandled browser error.
 
@@ -172,13 +196,15 @@ python -m pip install -r requirements.txt
 python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ~~~
 
-In another terminal:
+In another terminal, either run the dashboard commands from its directory:
 
 ~~~powershell
 cd frontend
 npm ci
 npm run dev
 ~~~
+
+Or run `npm run dev` from the repository root; root scripts forward to the frontend workspace. The same applies to `npm run lint`, `npm run typecheck`, and `npm run build`.
 
 Open http://localhost:5173. Check backend readiness at http://127.0.0.1:8000/health.
 
@@ -207,6 +233,7 @@ Copy .env.example to .env. It contains placeholders only; never commit real prov
 | NOMINAL_MAX_PROVIDER_FAILOVERS | Infrastructure fallback ceiling; default 1. |
 | NOMINAL_BENCHMARK_FRONTIER_MODEL / NOMINAL_BENCHMARK_ECONOMY_MODEL | Fixed comparator models. |
 | NOMINAL_BENCHMARK_DATASET_PATH | Fixed corpus path. |
+| NOMINAL_BENCHMARK_JUDGE_ENABLED / NOMINAL_BENCHMARK_JUDGE_MODEL | Enables the benchmark-only, strategy-blind judge; it does not enable judge calls in the production routing quality gate. |
 
 ## 15. API example
 
@@ -256,7 +283,7 @@ curl -X POST http://127.0.0.1:8000/api/benchmarks/run \
   -d '{"max_items": 40}'
 ~~~
 
-Inspect summaries at GET /api/benchmarks, then fetch a complete run at GET /api/benchmarks/{id}. The dashboard Benchmark section presents the latest persisted comparison. Treat a run with failures as a reliability result, not a cost-savings result.
+Inspect summaries at GET /api/benchmarks, then fetch a complete run at GET /api/benchmarks/{id}. The dashboard publication comparison is intentionally pinned to canonical run `ea187efb-9229-4ddd-949f-107c9bc7fc61`, rather than whichever development run is newest. Treat a run with failures as a reliability result, not a cost-savings result.
 
 ## 17. Demo walkthrough
 

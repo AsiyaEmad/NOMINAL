@@ -12,7 +12,7 @@ def test_application_starts_and_health_returns_service_status() -> None:
         "status": "ok",
         "service": "NOMINAL",
         "environment": "development",
-        "enabled_models": 4,
+        "enabled_models": 3,
     }
 
 

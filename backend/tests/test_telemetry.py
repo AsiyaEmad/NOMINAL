@@ -9,6 +9,7 @@ from backend.app.models import (
     InternalChatCompletion,
     ModelDefinition,
     ModelTier,
+    ProviderAttempt,
     RequestProfile,
     RequestTrace,
     TokenUsage,
@@ -118,3 +119,29 @@ async def test_empty_database_returns_zero_metrics(repository: SqliteTelemetryRe
     assert summary["p95_latency_ms"] == 0.0
     assert summary["routing_distribution"] == {}
     assert summary["average_quality_score"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_provider_attempts_round_trip_with_aggregate_tokens(repository: SqliteTelemetryRepository) -> None:
+    trace = _trace(99, latency=50)
+    trace.input_tokens = 33
+    trace.output_tokens = 50
+    trace.provider_attempts = [
+        ProviderAttempt(
+            model_id="balanced", provider="openai", model_name="gpt-4.1",
+            input_tokens=15, output_tokens=20, latency_ms=20,
+        ),
+        ProviderAttempt(
+            model_id="frontier", provider="openai", model_name="o3",
+            input_tokens=18, output_tokens=30, latency_ms=30,
+        ),
+    ]
+
+    await repository.record(trace)
+    persisted = await repository.get(trace.request_id)
+
+    assert persisted is not None
+    assert (persisted.input_tokens, persisted.output_tokens) == (33, 50)
+    assert [(attempt.model_id, attempt.input_tokens, attempt.output_tokens) for attempt in persisted.provider_attempts] == [
+        ("balanced", 15, 20), ("frontier", 18, 30),
+    ]

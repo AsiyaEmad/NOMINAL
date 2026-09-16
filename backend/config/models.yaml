@@ -10,7 +10,7 @@ models:
     coding_score: 0.48
     general_score: 0.60
     context_window: 128000
-    enabled: true
+    enabled: false
     capabilities:
       supports_tools: false
       supports_vision: false

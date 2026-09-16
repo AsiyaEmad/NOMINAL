@@ -132,6 +132,17 @@ class QualityResult(BaseModel):
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ProviderAttempt(BaseModel):
+    """One successful upstream completion within a logical NOMINAL request."""
+
+    model_id: str
+    provider: str
+    model_name: str
+    input_tokens: NonNegativeInt
+    output_tokens: NonNegativeInt
+    latency_ms: NonNegativeInt
+
+
 class RequestTrace(BaseModel):
     """Minimal end-to-end record for telemetry implementations to persist."""
 
@@ -146,6 +157,7 @@ class RequestTrace(BaseModel):
     model_used: str | None = None
     input_tokens: NonNegativeInt | None = None
     output_tokens: NonNegativeInt | None = None
+    provider_attempts: list[ProviderAttempt] = Field(default_factory=list)
     initial_model: str | None = None
     final_model: str | None = None
     escalated: bool = False

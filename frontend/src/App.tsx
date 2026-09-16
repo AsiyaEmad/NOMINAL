@@ -16,6 +16,7 @@ import {
   YAxis,
 } from 'recharts'
 import { nominalApi } from './api'
+import { CANONICAL_BENCHMARK_RUN_ID } from './canonicalBenchmark'
 import type { BenchmarkRun, BenchmarkStrategyMetrics, MetricsSummary, RequestTrace } from './types'
 import { formatCurrency, formatMs, formatNumber, shortId, tierFromModel, titleCase } from './utils'
 
@@ -67,12 +68,11 @@ function strategyName(strategy: string) {
   return strategy.replace(/_/g, ' ').replace(/\b\w/g, (letter: string) => letter.toUpperCase())
 }
 
-function BenchmarkSection({ run, running, onRun }: { run: BenchmarkRun | undefined; running: boolean; onRun: () => void }) {
+function BenchmarkSection({ run, canonical = false, running, onRun }: { run: BenchmarkRun | undefined; canonical?: boolean; running: boolean; onRun: () => void }) {
   if (!run) {
     return (
-      <section className="panel mt-6 flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="eyebrow">Benchmark</p><h2 className="mt-1 text-lg font-semibold">Prove the routing trade-off</h2><p className="mt-1 max-w-2xl text-sm text-slate-500">Run the fixed prompt corpus through Frontier, Economy, and Nominal. Results are measured from real provider calls and persisted for review.</p></div>
-        <button onClick={onRun} disabled={running} className="rounded-md bg-signal px-4 py-2 text-sm font-semibold text-ink transition hover:bg-[#b5ffdb] disabled:cursor-not-allowed disabled:opacity-50">{running ? 'Running benchmark...' : 'Run benchmark'}</button>
+      <section className="panel mt-6 p-5">
+        <p className="eyebrow">Benchmark / canonical publication run</p><h2 className="mt-1 text-lg font-semibold">Controlled 40-item comparison unavailable</h2><p className="mt-1 max-w-2xl text-sm text-slate-500">The audited benchmark artifact could not be loaded. Live operational telemetry above remains available and is intentionally separate.</p>
       </section>
     )
   }
@@ -83,12 +83,35 @@ function BenchmarkSection({ run, running, onRun }: { run: BenchmarkRun | undefin
   const comparison = run.strategies.map((item) => ({
     name: strategyName(item.strategy), cost: item.total_cost, latency: item.average_latency_ms, quality: item.quality_score * 100,
   }))
-  const qualityLabel = run.evaluator_type === 'judge_model' ? 'Judge-model quality evaluation' : 'Heuristic quality evaluation'
+  const qualityLabel = run.evaluator_type === 'benchmark_judge' ? 'Strategy-blind benchmark judge' : run.evaluator_type
+
+  if (canonical) {
+    return (
+      <section className="panel mt-6 overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-line px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="eyebrow">Benchmark / canonical publication run</p>
+            <h2 className="mt-1 text-lg font-semibold">Controlled 40-item comparison</h2>
+            <p className="mt-1 text-xs text-slate-500">Run {shortId(CANONICAL_BENCHMARK_RUN_ID)} - {qualityLabel} - {new Date(run.created_at).toLocaleString()}</p>
+          </div>
+          <div className="rounded border border-signal/30 bg-signal/[.06] px-3 py-2 text-right">
+            <p className="eyebrow">NOMINAL cost eliminated</p>
+            <p className="text-lg font-semibold text-signal">{savings === null ? 'N/A' : `${savings.toFixed(1)}%`}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">vs Always Frontier; inference cost only</p>
+          </div>
+        </div>
+        <div className="grid gap-4 p-5 xl:grid-cols-[1.25fr_.75fr]">
+          <div className="overflow-x-auto"><table className="min-w-[760px] w-full text-left text-xs"><thead className="text-[10px] uppercase tracking-[.12em] text-slate-500"><tr>{['Strategy', 'Cost', 'Cost / request', 'Quality', 'Pass rate', 'Avg / P95 latency', 'Frontier', 'Escalations', 'Failures'].map((heading) => <th key={heading} className="border-b border-line px-2 py-2.5 font-medium">{heading}</th>)}</tr></thead><tbody>{run.strategies.map((item: BenchmarkStrategyMetrics) => <tr key={item.strategy} className={item.strategy === 'nominal' ? 'bg-signal/[.05] text-slate-100' : 'text-slate-400'}><td className="border-b border-line/70 px-2 py-3 font-medium">{strategyName(item.strategy)}{item.strategy === 'nominal' && <span className="ml-2 text-[10px] uppercase text-signal">NOMINAL path</span>}</td><td className="border-b border-line/70 px-2 py-3">{formatCurrency(item.total_cost)}</td><td className="border-b border-line/70 px-2 py-3">{formatCurrency(item.estimated_cost_per_request)}</td><td className="border-b border-line/70 px-2 py-3">{Math.round(item.quality_score * 100)}%</td><td className="border-b border-line/70 px-2 py-3">{item.quality_pass_rate.toFixed(1)}%</td><td className="border-b border-line/70 px-2 py-3">{formatMs(item.average_latency_ms)} / {formatMs(item.p95_latency_ms)}</td><td className="border-b border-line/70 px-2 py-3">{item.frontier_calls}</td><td className="border-b border-line/70 px-2 py-3">{item.escalations}</td><td className="border-b border-line/70 px-2 py-3">{item.failures}</td></tr>)}</tbody></table></div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 xl:grid-cols-1"><ChartPanel title="Configured-price inference cost" subtitle="Judge cost is tracked separately"><ResponsiveContainer><BarChart data={comparison}><XAxis dataKey="name" tick={{ fill: '#8490a5', fontSize: 10 }} /><YAxis tick={{ fill: '#8490a5', fontSize: 10 }} /><Tooltip contentStyle={tooltipStyle} formatter={(value) => formatCurrency(Number(value))} /><Bar dataKey="cost" fill="#9cf7c8" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></ChartPanel><ChartPanel title="Benchmark quality score" subtitle={qualityLabel}><ResponsiveContainer><BarChart data={comparison}><XAxis dataKey="name" tick={{ fill: '#8490a5', fontSize: 10 }} /><YAxis domain={[0, 100]} tick={{ fill: '#8490a5', fontSize: 10 }} /><Tooltip contentStyle={tooltipStyle} formatter={(value) => `${Number(value).toFixed(1)}%`} /><Bar dataKey="quality" fill="#ffca76" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></ChartPanel><ChartPanel title="Average inference latency" subtitle="Benchmark judge time excluded"><ResponsiveContainer><BarChart data={comparison}><XAxis dataKey="name" tick={{ fill: '#8490a5', fontSize: 10 }} /><YAxis tick={{ fill: '#8490a5', fontSize: 10 }} /><Tooltip contentStyle={tooltipStyle} formatter={(value) => formatMs(Number(value))} /><Bar dataKey="latency" fill="#a99bff" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></ChartPanel></div>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="panel mt-6 overflow-hidden">
       <div className="flex flex-col gap-4 border-b border-line px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div><p className="eyebrow">Benchmark / latest run</p><h2 className="mt-1 text-lg font-semibold">Measured routing comparison</h2><p className="mt-1 text-xs text-slate-500">{run.dataset_name} · {qualityLabel} · {new Date(run.created_at).toLocaleString()}</p></div>
+        <div><p className="eyebrow">Benchmark / saved run</p><h2 className="mt-1 text-lg font-semibold">Measured routing comparison</h2><p className="mt-1 text-xs text-slate-500">{run.dataset_name} · {qualityLabel} · {new Date(run.created_at).toLocaleString()}</p></div>
         <div className="flex items-center gap-3"><div className="rounded border border-signal/30 bg-signal/[.06] px-3 py-2 text-right"><p className="eyebrow">Nominal cost eliminated</p><p className="text-lg font-semibold text-signal">{savings === null ? '—' : `${savings.toFixed(1)}%`}</p></div><button onClick={onRun} disabled={running} className="rounded border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:border-slate-400 disabled:opacity-50">{running ? 'Running...' : 'Run again'}</button></div>
       </div>
       <div className="grid gap-4 p-5 xl:grid-cols-[1.25fr_.75fr]">
@@ -130,8 +153,7 @@ function TraceFlow({ trace }: { trace: RequestTrace }) {
 
 export default function App() {
   const [state, setState] = useState<DashboardState | null>(null)
-  const [benchmarkRuns, setBenchmarkRuns] = useState<BenchmarkRun[]>([])
-  const [benchmarkRunning, setBenchmarkRunning] = useState(false)
+  const [canonicalBenchmark, setCanonicalBenchmark] = useState<BenchmarkRun | undefined>(undefined)
   const [selected, setSelected] = useState<RequestTrace | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -139,12 +161,18 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [summary, traces, runs] = await Promise.all([nominalApi.getSummary(), nominalApi.getTraces(), nominalApi.getBenchmarks()])
+      const [summary, traces] = await Promise.all([nominalApi.getSummary(), nominalApi.getTraces()])
       setState({ summary, traces })
-      setBenchmarkRuns(runs)
       setSelected((current) => current ? traces.find((trace) => trace.request_id === current.request_id) ?? current : traces[0] ?? null)
       setUpdatedAt(new Date())
       setError(null)
+      try {
+        setCanonicalBenchmark(await nominalApi.getBenchmark(CANONICAL_BENCHMARK_RUN_ID))
+      } catch {
+        // The controlled publication artifact is intentionally independent
+        // from live operational telemetry and may be unavailable by itself.
+        setCanonicalBenchmark(undefined)
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to reach NOMINAL telemetry')
     } finally { setLoading(false) }
@@ -161,18 +189,6 @@ export default function App() {
     try { setSelected(await nominalApi.getTrace(trace.request_id)) } catch { /* list payload remains useful */ }
   }
 
-  const runBenchmark = async () => {
-    setBenchmarkRunning(true)
-    try {
-      await nominalApi.runBenchmark()
-      await load()
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Benchmark run failed')
-    } finally {
-      setBenchmarkRunning(false)
-    }
-  }
-
   const summary = state?.summary ?? emptySummary
   const traces = state?.traces ?? emptyTraces
   const tierDistribution = useMemo(() => Object.entries(summary.routing_distribution).reduce<Record<string, number>>((tiers, [model, count]) => {
@@ -183,8 +199,6 @@ export default function App() {
   const latencyData = orderedTraces.map((trace, index) => ({ name: `${index + 1}`, latency: trace.total_latency_ms ?? trace.provider_latency_ms ?? 0 }))
   let cumulative = 0
   const savingsData = orderedTraces.map((trace, index) => { cumulative += Number(trace.estimated_cost_saved ?? 0); return { name: `${index + 1}`, savings: cumulative } })
-  const latestBenchmark = benchmarkRuns[0]
-
   return (
     <main className="min-h-screen bg-ink text-slate-100"><div className="grid-noise min-h-screen">
       <header className="border-b border-line bg-ink/80 px-5 py-4 backdrop-blur lg:px-8"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
@@ -193,7 +207,7 @@ export default function App() {
       </div></header>
       <div className="mx-auto max-w-[1600px] px-5 py-6 lg:px-8">
         {error && <div className="mb-5 flex items-center justify-between rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"><span>{error}</span><button onClick={() => void load()} className="underline">Retry</button></div>}
-        <section><div className="mb-4 flex items-end justify-between"><div><p className="eyebrow">Overview</p><h2 className="mt-1 text-xl font-semibold">Optimization at a glance</h2></div><p className="hidden text-xs text-slate-500 md:block">Baseline is an estimated premium-model equivalent, not incurred spend.</p></div>
+        <section><div className="mb-4 flex items-end justify-between"><div><p className="eyebrow">Overview / live operational telemetry</p><h2 className="mt-1 text-xl font-semibold">Optimization at a glance</h2></div><p className="hidden text-xs text-slate-500 md:block">Baseline is an estimated premium-model equivalent, not incurred spend.</p></div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
             <KpiCard label="Total requests" value={formatNumber(summary.total_requests)} detail={`${formatNumber(summary.total_tokens)} tokens`} />
             <KpiCard label="Est. baseline" value={formatCurrency(summary.estimated_baseline_cost)} detail="Premium-model equivalent" />
@@ -205,7 +219,7 @@ export default function App() {
             <KpiCard label="Quality score" value={`${Math.round(summary.average_quality_score * 100)}%`} detail={`${summary.escalation_rate.toFixed(1)}% escalated`} accent="text-amber" />
           </div>
         </section>
-        <BenchmarkSection run={latestBenchmark} running={benchmarkRunning} onRun={() => void runBenchmark()} />
+        <BenchmarkSection run={canonicalBenchmark} canonical running={false} onRun={() => undefined} />
         {loading && !state ? <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2"><div className="panel h-64 animate-pulse" /><div className="panel h-64 animate-pulse" /></div> : traces.length === 0 && !error ? <div className="mt-6"><EmptyState /></div> : <>
           <section className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
             <ChartPanel title="Routing distribution" subtitle="Requests by model tier"><ResponsiveContainer><PieChart><Pie data={distributionData} dataKey="value" nameKey="name" innerRadius={54} outerRadius={84} paddingAngle={4}>{distributionData.map((entry) => <Cell key={entry.name} fill={TIER_COLORS[entry.name] ?? '#7585a0'} />)}</Pie><Tooltip contentStyle={tooltipStyle} /><Legend /></PieChart></ResponsiveContainer></ChartPanel>

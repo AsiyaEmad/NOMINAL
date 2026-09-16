@@ -3,7 +3,7 @@ from decimal import Decimal
 from math import ceil
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, Numeric, String, Text, create_engine, select
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, Numeric, String, Text, create_engine, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from backend.app.models import (
@@ -39,6 +39,7 @@ class RequestTrace(Base):
     total_latency_ms: Mapped[int | None] = mapped_column(Integer)
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)
+    provider_attempts: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     quality_score: Mapped[float | None] = mapped_column(Float)
     quality_passed: Mapped[bool | None] = mapped_column(Boolean)
     actual_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
@@ -68,6 +69,7 @@ class BenchmarkRun(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     dataset_name: Mapped[str] = mapped_column(String(128), nullable=False)
     evaluator_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    judge_model: Mapped[str | None] = mapped_column(String(128))
     strategies: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     request_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
@@ -84,6 +86,10 @@ class SqliteTelemetryRepository(TelemetryRepository):
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
+        existing_columns = {column["name"] for column in inspect(self._engine).get_columns("request_traces")}
+        if "provider_attempts" not in existing_columns:
+            with self._engine.begin() as connection:
+                connection.execute(text("ALTER TABLE request_traces ADD COLUMN provider_attempts JSON"))
 
     def dispose(self) -> None:
         self._engine.dispose()
@@ -167,6 +173,7 @@ class SqliteTelemetryRepository(TelemetryRepository):
             total_latency_ms=trace.total_latency_ms,
             input_tokens=trace.input_tokens,
             output_tokens=trace.output_tokens,
+            provider_attempts=[attempt.model_dump(mode="json") for attempt in trace.provider_attempts],
             quality_score=quality.score if quality else None,
             quality_passed=quality.passed if quality else None,
             actual_cost=trace.actual_cost,
@@ -204,6 +211,7 @@ class SqliteTelemetryRepository(TelemetryRepository):
             model_used=record.model_used,
             input_tokens=record.input_tokens,
             output_tokens=record.output_tokens,
+            provider_attempts=record.provider_attempts or [],
             initial_model=record.selected_model,
             final_model=record.final_model,
             escalated=record.escalated,
@@ -230,6 +238,10 @@ class BenchmarkRepository:
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self._engine)
+        existing_columns = {column["name"] for column in inspect(self._engine).get_columns("benchmark_runs")}
+        if "judge_model" not in existing_columns:
+            with self._engine.begin() as connection:
+                connection.execute(text("ALTER TABLE benchmark_runs ADD COLUMN judge_model VARCHAR(128)"))
 
     def dispose(self) -> None:
         self._engine.dispose()
@@ -243,6 +255,7 @@ class BenchmarkRepository:
                     status=result.status,
                     dataset_name=result.dataset_name,
                     evaluator_type=result.evaluator_type,
+                    judge_model=result.judge_model,
                     strategies=[item.model_dump(mode="json") for item in result.strategies],
                     request_results=result.request_results,
                 )
@@ -268,6 +281,7 @@ class BenchmarkRepository:
             status=record.status,
             dataset_name=record.dataset_name,
             evaluator_type=record.evaluator_type,
+            judge_model=record.judge_model,
             strategies=[BenchmarkStrategyMetrics.model_validate(item) for item in record.strategies],
             request_results=record.request_results if include_requests else [],
         )

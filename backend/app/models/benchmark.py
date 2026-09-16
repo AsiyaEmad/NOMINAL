@@ -26,6 +26,12 @@ class BenchmarkStrategyMetrics(BaseModel):
     p95_latency_ms: NonNegativeFloat
     quality_score: float = Field(ge=0, le=1)
     quality_pass_rate: float = Field(ge=0, le=100)
+    benchmark_evaluation_cost: NonNegativeFloat = 0.0
+    benchmark_evaluation_latency_ms: NonNegativeFloat = 0.0
+    evaluation_failures: NonNegativeInt = 0
+    benchmark_retry_count: NonNegativeInt = 0
+    provider_operation_attempt_count: NonNegativeInt = 0
+    judge_operation_attempt_count: NonNegativeInt = 0
     frontier_calls: NonNegativeInt
     escalations: NonNegativeInt
     failures: NonNegativeInt
@@ -37,5 +43,6 @@ class BenchmarkRunResult(BaseModel):
     status: str
     dataset_name: str
     evaluator_type: str
+    judge_model: str | None = None
     strategies: list[BenchmarkStrategyMetrics]
     request_results: list[dict[str, Any]] = Field(default_factory=list)

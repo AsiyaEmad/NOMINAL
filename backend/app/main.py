@@ -21,6 +21,8 @@ from backend.app.telemetry.database import SqliteTelemetryRepository
 from backend.app.telemetry.base import TelemetryRepository
 from backend.app.telemetry.database import BenchmarkRepository
 from backend.app.benchmark.runner import BenchmarkRunner
+from backend.app.benchmark.quality import JudgeModelBenchmarkQualityEvaluator, UnavailableBenchmarkQualityEvaluator
+from backend.app.benchmark.retry import BenchmarkOperationRetry
 
 logger = logging.getLogger(__name__)
 
@@ -66,16 +68,43 @@ def create_app(
             quality_evaluator=quality_evaluator,
             cost_calculator=cost_calculator,
         )
+        # Benchmarks use a distinct gateway so neutral same-model retries never
+        # change the production API's retry/fallback semantics.
+        benchmark_operation_retry = BenchmarkOperationRetry()
+        benchmark_gateway = ChatCompletionGateway(
+            catalog=catalog,
+            providers=providers,
+            telemetry=telemetry,
+            settings=app_settings,
+            profiler=HeuristicRequestProfiler(),
+            routing_engine=CostAwareRoutingEngine(),
+            quality_evaluator=quality_evaluator,
+            cost_calculator=cost_calculator,
+            provider_operation_executor=benchmark_operation_retry.execute_provider_chat,
+        )
+        judge_model = catalog.get(app_settings.benchmark_judge_model)
+        benchmark_quality_evaluator = (
+            JudgeModelBenchmarkQualityEvaluator(
+                providers=providers,
+                judge_model=judge_model,
+                max_tokens=app_settings.benchmark_judge_max_tokens,
+                operation_retry=benchmark_operation_retry,
+            )
+            if app_settings.benchmark_judge_enabled and judge_model is not None
+            else UnavailableBenchmarkQualityEvaluator()
+        )
         application.state.benchmark_runner = BenchmarkRunner(
             settings=app_settings,
             catalog=catalog,
             providers=providers,
             profiler=HeuristicRequestProfiler(),
             quality_evaluator=quality_evaluator,
-            gateway=application.state.chat_gateway,
+            benchmark_quality_evaluator=benchmark_quality_evaluator,
+            gateway=benchmark_gateway,
             telemetry=telemetry,
             repository=benchmark_repository,
             cost_calculator=cost_calculator,
+            operation_retry=benchmark_operation_retry,
         )
         logger.info(
             "application_started",

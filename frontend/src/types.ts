@@ -89,6 +89,12 @@ export type BenchmarkStrategyMetrics = {
   p95_latency_ms: number
   quality_score: number
   quality_pass_rate: number
+  benchmark_evaluation_cost: number
+  benchmark_evaluation_latency_ms: number
+  evaluation_failures: number
+  benchmark_retry_count: number
+  provider_operation_attempt_count: number
+  judge_operation_attempt_count: number
   frontier_calls: number
   escalations: number
   failures: number
@@ -99,7 +105,8 @@ export type BenchmarkRun = {
   created_at: string
   status: string
   dataset_name: string
-  evaluator_type: 'heuristic' | 'judge_model'
+  evaluator_type: string
+  judge_model?: string | null
   strategies: BenchmarkStrategyMetrics[]
   request_results: Record<string, unknown>[]
 }

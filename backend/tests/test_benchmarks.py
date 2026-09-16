@@ -1,10 +1,12 @@
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.benchmark import BenchmarkRunner
+from backend.app.benchmark import BenchmarkRunner, BenchmarkQualityEvaluator
+from backend.app.benchmark.quality import BenchmarkEvaluation, CriterionResult
 from backend.app.core.config import Settings
 from backend.app.main import create_app
 from backend.app.models import (
@@ -58,6 +60,35 @@ class MockProvider(ModelProvider):
         return True
 
 
+class FixedBenchmarkEvaluator(BenchmarkQualityEvaluator):
+    """Offline judge double that proves benchmark accounting is independent."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[dict, InternalChatCompletion]] = []
+
+    async def evaluate(
+        self, item: dict, response: InternalChatCompletion, operation_context=None
+    ) -> BenchmarkEvaluation:
+        self.calls.append((item, response))
+        return BenchmarkEvaluation(
+            score=0.9,
+            passed=True,
+            reasons=["The response satisfies the supplied test criterion."],
+            criteria_results=[CriterionResult(
+                criterion=item.get("evaluation_criteria", "prompt relevance"),
+                passed=True,
+                score=0.9,
+                reason="Satisfied by the mocked response.",
+            )],
+            evaluator_type="benchmark_judge",
+            judge_model="economy",
+            evaluation_cost=Decimal("0.00012345"),
+            evaluation_latency_ms=37,
+            input_tokens=120,
+            output_tokens=30,
+        )
+
+
 def _model(model_id: str, tier: ModelTier, input_price: float, output_price: float) -> ModelDefinition:
     return ModelDefinition(
         id=model_id, tier=tier, provider="mock", model_name=model_id,
@@ -86,6 +117,7 @@ async def test_mocked_benchmark_measures_and_persists_all_strategies(tmp_path: P
     )
     provider = MockProvider()
     quality = LayeredQualityEvaluator()
+    benchmark_quality = FixedBenchmarkEvaluator()
     calculator = CostCalculator(frontier)
     gateway = ChatCompletionGateway(
         catalog=catalog, providers=ProviderRegistry({"mock": provider}), telemetry=telemetry,
@@ -97,6 +129,7 @@ async def test_mocked_benchmark_measures_and_persists_all_strategies(tmp_path: P
     runner = BenchmarkRunner(
         settings=settings, catalog=catalog, providers=ProviderRegistry({"mock": provider}),
         profiler=BenchmarkProfiler(), quality_evaluator=quality, gateway=gateway,
+        benchmark_quality_evaluator=benchmark_quality,
         telemetry=telemetry, repository=repository, cost_calculator=calculator,
     )
 
@@ -105,7 +138,8 @@ async def test_mocked_benchmark_measures_and_persists_all_strategies(tmp_path: P
     by_strategy = {item.strategy.value: item for item in result.strategies}
 
     assert result.status == "completed"
-    assert result.evaluator_type == "heuristic"
+    assert result.evaluator_type == "benchmark_judge"
+    assert result.judge_model == "economy"
     assert len(result.request_results) == 6
     assert by_strategy["always_frontier"].total_cost == pytest.approx(0.0012)
     assert by_strategy["always_economy"].total_cost == pytest.approx(0.00024)
@@ -113,6 +147,15 @@ async def test_mocked_benchmark_measures_and_persists_all_strategies(tmp_path: P
     assert by_strategy["always_frontier"].frontier_calls == 2
     assert by_strategy["nominal"].frontier_calls == 0
     assert all(item.quality_pass_rate == 100 for item in result.strategies)
+    assert all(item.benchmark_evaluation_cost == pytest.approx(0.0002469) for item in result.strategies)
+    assert all(item.benchmark_evaluation_latency_ms == 74 for item in result.strategies)
+    assert all(item.evaluation_failures == 0 for item in result.strategies)
+    # Judge spend is reported separately; direct inference totals are unchanged.
+    assert by_strategy["always_economy"].total_cost == pytest.approx(0.00024)
+    assert len(benchmark_quality.calls) == 6
+    nominal_results = [item for item in result.request_results if item["strategy"] == "nominal"]
+    assert all(len(item["provider_attempts"]) == 1 for item in nominal_results)
+    assert all(item["response_content"] == "A useful complete response." for item in result.request_results)
     assert persisted is not None and len(persisted.request_results) == 6
     repository.dispose()
 
@@ -125,6 +168,7 @@ def test_benchmark_endpoints_return_persisted_comparison(tmp_path: Path) -> None
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'app.db').as_posix()}",
         benchmark_dataset_path=dataset_path,
+        benchmark_judge_enabled=False,
     )
     app = create_app(
         settings=settings,
@@ -142,8 +186,32 @@ def test_benchmark_endpoints_return_persisted_comparison(tmp_path: Path) -> None
     assert [item["strategy"] for item in run["strategies"]] == [
         "always_frontier", "always_economy", "nominal",
     ]
+    # A disabled judge is not silently converted into a quality score: each
+    # completed inference is persisted with an explicit evaluation failure.
+    assert run["evaluator_type"] == "benchmark_judge_unavailable"
+    assert all(item["evaluation_failures"] == 1 for item in run["strategies"])
     assert listing.status_code == 200
     assert listing.json()[0]["id"] == run["id"]
     assert listing.json()[0]["request_results"] == []
     assert detail.status_code == 200
     assert len(detail.json()["request_results"]) == 3
+    assert all(item["evaluation_failed"] is True for item in detail.json()["request_results"])
+    assert all(item["evaluation_failure_reason"] == "benchmark_judge_not_configured" for item in detail.json()["request_results"])
+
+
+def test_application_wires_one_neutral_retry_policy_to_every_benchmark_operation(tmp_path: Path) -> None:
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'retry-wiring.db').as_posix()}",
+        benchmark_judge_enabled=True,
+    )
+    app = create_app(settings=settings, provider_registry=ProviderRegistry({"openai": MockProvider()}))
+
+    with TestClient(app):
+        runner = app.state.benchmark_runner
+        retry = runner._operation_retry
+        benchmark_gateway = runner._gateway
+        judge = runner._benchmark_quality_evaluator
+
+        assert benchmark_gateway._provider_operation_executor.__self__ is retry
+        assert judge._operation_retry is retry
+        assert retry.max_total_attempts == 3

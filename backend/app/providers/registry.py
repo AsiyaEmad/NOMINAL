@@ -25,6 +25,7 @@ class ProviderRegistry:
         provider = self._providers.get(provider_name)
         if provider is None:
             raise ProviderUnavailableError(
-                f"Provider '{provider_name}' is not configured"
+                f"Provider '{provider_name}' is not configured",
+                failure_category="configuration",
             )
         return provider

@@ -9,4 +9,4 @@ def test_default_model_catalog_has_each_conceptual_tier() -> None:
     catalog = ModelCatalog.from_yaml(path)
 
     assert {model.tier for model in catalog.models} == set(ModelTier)
-    assert len(catalog.enabled_models) == 4
+    assert len(catalog.enabled_models) == 3
