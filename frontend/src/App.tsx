@@ -202,7 +202,7 @@ export default function App() {
   return (
     <main className="min-h-screen bg-ink text-slate-100"><div className="grid-noise min-h-screen">
       <header className="border-b border-line bg-ink/80 px-5 py-4 backdrop-blur lg:px-8"><div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
-        <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded bg-signal text-xs font-black text-ink">N</div><div><h1 className="text-sm font-semibold tracking-wide">NOMINAL <span className="font-normal text-slate-500">/ CONTROL PLANE</span></h1><p className="text-[10px] uppercase tracking-[.16em] text-slate-500">Adaptive inference routing</p></div></div>
+        <div className="flex items-center gap-3"><img src="/logo.png" alt="NOMINAL logo" className="h-8 w-8 rounded object-contain" /><div><h1 className="text-sm font-semibold tracking-wide">NOMINAL <span className="font-normal text-slate-500">/ CONTROL PLANE</span></h1><p className="text-[10px] uppercase tracking-[.16em] text-slate-500">Adaptive inference routing</p></div></div>
         <div className="flex items-center gap-3 text-xs text-slate-500"><span className="hidden sm:inline">{updatedAt ? `Updated ${updatedAt.toLocaleTimeString()}` : 'Connecting…'}</span><span className="flex items-center gap-2 rounded-full border border-signal/20 bg-signal/[.06] px-2.5 py-1 text-signal"><i className="status-dot" /> Live telemetry</span><button onClick={() => void load()} className="rounded border border-slate-700 px-2 py-1 text-slate-300 hover:border-slate-500">Refresh</button></div>
       </div></header>
       <div className="mx-auto max-w-[1600px] px-5 py-6 lg:px-8">
