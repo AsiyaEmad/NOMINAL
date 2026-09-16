@@ -285,11 +285,8 @@ curl -X POST http://127.0.0.1:8000/api/benchmarks/run \
 
 Inspect summaries at GET /api/benchmarks, then fetch a complete run at GET /api/benchmarks/{id}. The dashboard publication comparison is intentionally pinned to canonical run `ea187efb-9229-4ddd-949f-107c9bc7fc61`, rather than whichever development run is newest. Treat a run with failures as a reliability result, not a cost-savings result.
 
-## 17. Demo walkthrough
 
-See [DEMO.md](DEMO.md) for the strict two-to-three-minute judge flow: problem, simple route, hard route, quality escalation, provider fallback, dashboard, and benchmark comparison.
-
-## 18. Known MVP limitations
+## 17. Known MVP limitations
 
 - SQLite is appropriate for one demo instance, not multi-replica production deployment.
 - The default quality gate is deterministic; an expensive judge is intentionally not forced on every request.
@@ -297,7 +294,7 @@ See [DEMO.md](DEMO.md) for the strict two-to-three-minute judge flow: problem, s
 - Benchmark execution is synchronous; use a bounded corpus/provider budget for live demos.
 - Capability scores and pricing are registry inputs and should be calibrated against real workloads before production use.
 
-## 19. Future roadmap
+## 18. Future roadmap
 
 1. Calibrate capability and quality predictions using labeled workload outcomes.
 2. Add asynchronous benchmark execution and richer evaluation datasets.
