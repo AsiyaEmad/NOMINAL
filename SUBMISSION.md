@@ -62,7 +62,7 @@ Python, FastAPI, Uvicorn, Pydantic v2, pydantic-settings, httpx, SQLAlchemy, SQL
 - Added unit coverage for routing profiles, quality escalation, timeout fallback, rate-limit fallback, provider exhaustion, cost accounting, telemetry aggregation, benchmark aggregation, and API validation.
 - Hardened the project for judging with Docker assets, README-driven startup, health checks, CORS, configuration validation, and safe error behavior.
 
-## What we learned
+## What I learned
 
 Inference optimization needs more than a cheap-model-first rule. A practical system needs distinct capability signals, quality boundaries, reliable fallback behavior, and visibility into the consequence of every routing decision. It also needs to distinguish measured results from estimates.
 
